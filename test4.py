@@ -24,6 +24,13 @@ ENCODER_PATH = "label_encoder.joblib"
 SMOOTHING_WINDOW = 10   # how many recent predictions to vote on
 MIN_CONFIDENCE = 0.55   # show prediction only if confidence >= this
 
+# ? Map numeric labels to letters
+LABEL_MAP = {
+    "0": "A",
+    "1": "B",
+    "2": "C"
+}
+
 
 model = joblib.load(MODEL_PATH)
 le = joblib.load(ENCODER_PATH)
@@ -53,6 +60,7 @@ if USE_MJPG:
 if not cap.isOpened():
     raise RuntimeError(f"? Could not open camera index {CAM_INDEX}. Try 1 or check /dev/video*")
 
+# Warm-up
 for _ in range(10):
     cap.read()
 
@@ -91,22 +99,28 @@ while True:
             X = np.array(features, dtype=np.float32).reshape(1, -1)
 
             pred_idx = int(model.predict(X)[0])
-            pred_label = le.inverse_transform([pred_idx])[0]
+            pred_label = le.inverse_transform([pred_idx])[0]  # "0"/"1"/"2"
 
             conf = None
             if hasattr(model, "predict_proba"):
                 proba = model.predict_proba(X)[0]
                 conf = float(np.max(proba))
 
-            # If we have confidence and it's too low, treat as unknown
+            # If confidence is low ? mark as Unknown for smoothing
             if conf is not None and conf < MIN_CONFIDENCE:
                 pred_history.append("Unknown")
             else:
                 pred_history.append(str(pred_label))
 
-            # Majority vote
+            # Majority vote over last N frames
             vote = Counter(pred_history).most_common(1)[0][0]
-            display_text = f"Pred: {vote}"
+
+            # ? Convert vote to letter
+            if vote == "Unknown":
+                display_text = "Pred: Unknown"
+            else:
+                letter = LABEL_MAP.get(vote, vote)  # fallback to vote if not in map
+                display_text = f"Pred: {letter}"
 
             if conf is not None:
                 conf_text = f"Conf: {conf*100:.1f}%"
